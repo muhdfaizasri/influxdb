@@ -1,0 +1,48 @@
+#!/bin/bash
+
+
+# Variables:
+
+influxdb_logfile="/var/log/backup/$(date +%Y%m%d_%H%M%S)_influx_backup.log"
+influxdb_databases='_internal'
+influxdb_host='localhost'
+influxdb_backup_root="/backup/influxdb"
+influxdb_backup_dest="${influxdb_backup_root}/$(date +%Y%m%d)/"
+influxdb_backup_retention="7" # Delete backups older than number of days
+
+# Functions:
+
+_initialize() {
+    echo "$(date): Starting InfluxDB Backup."
+    touch "${influxdb_logfile}"
+}
+
+_influxdb_backup() {
+    for influxdb_database in ${influxdb_databases}
+    do
+        echo "$(date) Backing up ${influxdb_database}:"
+        influxd backup -portable -database "${influxdb_database}" -host "${influxdb_host}:8088" "${influxdb_backup_dest}/${influxdb_database}"
+        echo "$(date) Compressing Backup.."
+        tar -caf "${influxdb_backup_dest}/${influxdb_database}.tar.bz2" "${influxdb_backup_dest}/${influxdb_database}"
+        echo "$(date) Cleanup raw backup files.."
+        rm -rf "${influxdb_backup_dest:?}/${influxdb_database}"
+        echo "$(date) ${influxdb_database} done."
+    done
+}
+
+_influxdb_cleanup() {
+    echo 'Deleting old backups:'
+    rm -rvf $(find ${influxdb_backup_root} -mtime +${influxdb_backup_retention})
+    echo "$(date) Cleanup done."
+}
+
+_finalize() {
+    echo "$(date): Finished InfluxDB Backup."
+    exit 0
+}
+
+# Main
+_initialize >> "${influxdb_logfile}" 2>&1
+_influxdb_backup >> "${influxdb_logfile}" 2>&1
+_influxdb_cleanup >> "${influxdb_logfile}" 2>&1
+_finalize >> "${influxdb_logfile}" 2>&1
